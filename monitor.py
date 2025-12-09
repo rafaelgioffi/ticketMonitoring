@@ -15,45 +15,28 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 HORA_INICIO = 23 # 23:00
 HORA_FIM = 0     # 00:00 (Meia noite)
 
-async def get_current_price():
+async def get_best_price_in_range():
     async with async_playwright() as p:
-        # Lança um browser headless (sem interface gráfica)
         browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        page = await context.new_page()
         
-        print("Acessando o site...")
-        await page.goto(URL_ALVO, timeout=60000)
+        print(f"Acessando {URL_ALVO}...")
+        await page.goto(URL_ALVO, timeout=90000)
         
-        # Espera o seletor de preço aparecer. 
-        # NOTA: O seletor abaixo (class) é um exemplo comum. 
-        # Você precisará Inspecionar Elemento no site da 1001 para pegar a classe exata do preço (ex: .seat-price, .value, etc).
-        # Vamos assumir uma busca genérica pelo símbolo de moeda se a classe mudar muito.
         try:
             # Tenta esperar por algo que pareça um preço
-            await page.wait_for_selector("text=R$", timeout=20000)
-            
-            # Pega todo o texto da página para filtrar preços (método bruto mas eficaz se as classes mudam)
-            content = await page.content()
-            
-            # Regex para achar preços no formato R$ 123,45
-            precos = re.findall(r'R\$\s?(\d{1,3}(?:\.\d{3})*,\d{2})', content)
-            
-            if not precos:
-                print("Nenhum preço encontrado.")
-                return None
-            
-            # Converte para float (Brasil usa vírgula, Python usa ponto)
-            valores_float = [float(p.replace('.', '').replace(',', '.')) for p in precos]
-            
-            # Assume que o menor preço encontrado na página é o da passagem desejada
-            menor_preco = min(valores_float)
-            return menor_preco
+            await page.wait_for_selector("text=R$", timeout=30000)            
             
         except Exception as e:
             print(f"Erro ao capturar preço: {e}")
-            return None
-        finally:
             await browser.close()
+            return None
+        
+        page_content = await page.coontent()
+        await browser.close()
+
+        return process_html_content(page_content)
 
 def get_last_price(cursor):
     cursor.execute("SELECT valor FROM historico_precos ORDER BY data_registro DESC LIMIT 1;")
