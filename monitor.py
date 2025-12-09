@@ -44,28 +44,70 @@ async def get_best_price_in_range():
                 '--disable-blink-features=AutomationControlled',
                 '--no-sandbox',
                 '--disable-setuid-sandbox'
-                ])
-        context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            viewport={'width': 1280, 'height': 720})
+                ]
+            )
+        
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            viewport={'width': 1280, 'height': 720}
+            )
+        
         await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
         page = await context.new_page()
         
-        print(f"Acessando {URL_ALVO}...")
-        await page.goto(URL_ALVO, timeout=90000)
+        print(f"Acessando {url}...")
         
-        try:
+        try:        
+            await page.goto(url, timeout=90000, wait_until="domcontentloaded")
+            await page.wait_for_timeout(random.randint(3000, 5000))
             # Tenta esperar por algo que pareça um preço
-            await page.wait_for_selector("text=R$", timeout=30000)            
+            await page.wait_for_selector("text=R$", timeout=30000)
             
         except Exception as e:
             print(f"Erro ao capturar preço: {e}")
             await browser.close()
             return None
         
-        page_content = await page.coontent()
+        content = await page.content()
         await browser.close()
 
-        return process_html_content(page_content)
+        return process_html_content(content)
+
+def process_html_content(html_content):
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    precos_encontrados = []
+    
+    # Busca textual bruta para evitar quebra com CSS dinâmico
+    text = soup.get_text(" | ", strip=True)
+    parts = text.split("|")
+    
+    last_seen_hour = -1
+    time_pattern = re.compile(r'(\d{2}):(\d{2})')
+    
+    for part in parts:
+        # Tenta achar horário
+        match_time = time_pattern.search(part)
+        if match_time:
+            last_seen_hour = int(match_time.group(1))
+
+        # Tenta achar preço associado ao último horário visto
+        if "R$" in part and last_seen_hour != -1:
+            price_str = re.search(r'R\$\s?(\d{1,3}(?:\.\d{3})*,\d{2})', part)
+            if price_str:
+                valor = float(price_str.group(1).replace('.', '').replace(',', '.'))
+                
+                # Valida horário (23h ou 00h)
+                if last_seen_hour == HORA_INICIO or last_seen_hour == HORA_FIM:
+                    print(f"Válido: {last_seen_hour}h -> R$ {valor}")
+                    precos_encontrados.append(valor)
+    
+    if not precos_encontrados:
+        return None
+        
+    return min(precos_encontrados)
 
 def get_last_price(cursor):
     cursor.execute("SELECT valor FROM historico_precos ORDER BY data_registro DESC LIMIT 1;")
