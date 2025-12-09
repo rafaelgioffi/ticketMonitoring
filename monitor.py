@@ -1,24 +1,53 @@
 import os
 import asyncio
 import re
+import random
+import urllib.parse
 import psycopg2
 from playwright.async_api import async_playwright
 from telegram import Bot
 
 # --- CONFIGURAÇÕES ---
-URL_ALVO = "https://www.autoviacao1001.com.br/disponibilidade?data_ida=10022026&origem_id=14245&destino_id=14199&num_psgr=2&num_chda=0&num_chds=1&deep=false"
+BASE_URL = "https://www.autoviacao1001.com.br/disponibilidade"
+
+PARAMS = {
+    "data_ida": "10022026",  # Formato DDMMAAAA
+    "origem_id": "14245",
+    "destino_id": "14199",
+    "num_psgr": "2",         # Adultos
+    "num_chda": "0",         # Crianças de colo? (verificar site)
+    "num_chds": "1",         # Crianças
+    "deep": "false"
+}
+#URL_ALVO = "https://www.autoviacao1001.com.br/disponibilidade?data_ida=10022026&origem_id=14245&destino_id=14199&num_psgr=2&num_chda=0&num_chds=1&deep=false"
+
+# Configuração da Faixa de Horário (Hora cheia)
+HORA_INICIO = 23 # 23:00
+HORA_FIM = 1     # 01:00
+
+# Ambiente
 DATABASE_URL = os.getenv("DATABASE_URL") # String de conexão do NeonDB
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Configuração da Faixa de Horário (Hora cheia)
-HORA_INICIO = 23 # 23:00
-HORA_FIM = 0     # 00:00 (Meia noite)
-
+def build_url():
+    """Constrói a URL dinamicamente com os parâmetros."""
+    query_string = urllib.parse.urlencode(PARAMS)
+    return f"{BASE_URL}?{query_string}" 
+    
 async def get_best_price_in_range():
+    url = build_url()
+    
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        browser = await p.chromium.launch(headless=True, 
+                args=[
+                '--disable-blink-features=AutomationControlled',
+                '--no-sandbox',
+                '--disable-setuid-sandbox'
+                ])
+        context = await browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            viewport={'width': 1280, 'height': 720})
+        await context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         page = await context.new_page()
         
         print(f"Acessando {URL_ALVO}...")
