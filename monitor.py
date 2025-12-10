@@ -22,8 +22,6 @@ PARAMS = {
     "num_chds": "0",         # Crianças
     "deep": "true"
 }
-#URL_ALVO = "https://www.autoviacao1001.com.br/disponibilidade?data_ida=10022026&origem_id=14245&destino_id=14199&num_psgr=2&num_chda=0&num_chds=1&deep=false"
-
 # Configuração da Faixa de Horário (Hora cheia)
 HORARIOS_ALVO = ["23:00", "00:00", "00:15", "00:30", "01:00"]
 
@@ -41,7 +39,7 @@ async def get_best_price():
     url = build_url()
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False, 
+        browser = await p.chromium.launch(headless=True, 
                 args=[
                 '--disable-blink-features=AutomationControlled',
                 '--no-sandbox',
@@ -62,8 +60,10 @@ async def get_best_price():
         
         try:
             waitTime = random.randint(10000, 20000)
+            
             await page.goto(url, timeout=90000, wait_until="domcontentloaded")
-            print(f"Aguardando {waitTime}s para garantir o carregamento...")
+            
+            print(f"Aguardando {waitTime / 1000}s para garantir o carregamento...")
             await page.wait_for_timeout(waitTime)
             
             print("Rolando a página até o fim para carregar todo o conteúdo...")
@@ -71,9 +71,7 @@ async def get_best_price():
                 await page.mouse.wheel(0, 800)
                 await page.wait_for_timeout(500)
                 
-            await page.wait_for_timeout(2000)            
-            # Tenta esperar por algo que pareça um preço
-            # await page.wait_for_selector("text=R$", timeout=30000)
+            await page.wait_for_timeout(2000)
             
         except Exception as e:
             print(f"Erro de navegação... {e}")
@@ -86,15 +84,10 @@ async def get_best_price():
         return process_html_content(content)
 
 def process_html_content(html_content):
-    # from bs4 import BeautifulSoup
     soup = BeautifulSoup(html_content, 'html.parser')
     
     precos_encontrados = []
-    
-    # Busca textual bruta para evitar quebra com CSS dinâmico
-    # text = soup.get_text(" | ", strip=True)
-    # parts = text.split("|")
-    
+        
     cards = soup.find_all('li', class_='list-companies-item')
     
     print(f"Encontrados {len(cards)} horários de viagens.")
@@ -136,58 +129,12 @@ def process_html_content(html_content):
                     except ValueError:
                         continue
                 
-            # Primeiro, pegamos os containers de cada classe (Leito, Executivo) dentro dessa viagem
-            # offer_items = card.select('div.offer-container li')
-            
-            # for offer in offer_items:
-                # Verifica se não está esgotado
-                # if "Esgotado" in offer.get_text():
-                    # continue
-            
-                # part_int = offer.find('span', {'data-js': 'priceLabel'})
-                # part_dec = offer.find('span', {'data-js': 'decimalLabel'})
-                
-                # if part_int and part_dec:
-                #     # Limpa e monta o float: "177" + "." + "74" (removendo a vírgula do texto ,74)
-                #     inteiro = part_int.get_text(strip=True).replace('.', '') # Remove ponto de milhar se houver
-                #     decimal = part_dec.get_text(strip=True).replace(',', '')
-                    
-                #     full_price = float(f"{inteiro}.{decimal}")
-                    
-                #     print(f"   Oferta encontrada: R$ {full_price:.2f}")
-                #     precos_encontrados.append(full_price)
-                
     if not precos_encontrados:
         print(f"Nenhum preço disponível para os horários: {HORARIOS_ALVO}")
         return None
         
     menor_preco = min(precos_encontrados)
     return menor_preco
-    
-    last_seen_hour = -1
-    time_pattern = re.compile(r'(\d{2}):(\d{2})')
-    
-    for part in parts:
-        # Tenta achar horário
-        match_time = time_pattern.search(part)
-        if match_time:
-            last_seen_hour = int(match_time.group(1))
-
-        # Tenta achar preço associado ao último horário visto
-        if "R$" in part and last_seen_hour != -1:
-            price_str = re.search(r'R\$\s?(\d{1,3}(?:\.\d{3})*,\d{2})', part)
-            if price_str:
-                valor = float(price_str.group(1).replace('.', '').replace(',', '.'))
-                
-                # Valida horário (23h ou 00h)
-                if last_seen_hour in HORARIOS:
-                    print(f"Válido: {last_seen_hour}h -> R$ {valor}")
-                    precos_encontrados.append(valor)
-    
-    if not precos_encontrados:
-        return None
-        
-    return min(precos_encontrados)
 
 def get_last_price(cursor):
     cursor.execute("SELECT price FROM price_history ORDER BY register_date DESC LIMIT 1;")
