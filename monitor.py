@@ -13,33 +13,72 @@ load_dotenv()
 # --- CONFIGURAÇÕES ---
 BASE_URL = "https://www.autoviacao1001.com.br/disponibilidade"
 
-PARAMS = {
-    "data_ida": "10022026",  # Formato DDMMAAAA
-    "origem_id": "14245",
-    "destino_id": "14199",
-    "num_psgr": "3",         # Adultos
-    "num_chda": "0",         # Crianças de colo? (verificar site)
-    "num_chds": "0",         # Crianças
-    "deep": "true"
-}
-# Configuração da Faixa de Horário (Hora cheia)
-HORARIOS_ALVO = ["23:00", "00:00", "00:15", "00:30", "01:00"]
+# PARAMS = {
+#     "data_ida": "10022026",  # Formato DDMMAAAA
+#     "origem_id": "14245",
+#     "destino_id": "14199",
+#     "num_psgr": "3",         # Adultos
+#     "num_chda": "0",         # Crianças de colo? (verificar site)
+#     "num_chds": "0",         # Crianças
+#     # "deep": "true"
+# }
+# # Configuração da Faixa de Horário (Hora cheia)
+# HORARIOS_ALVO = [22, 23, 0]
 
 # Ambiente
 DATABASE_URL = os.getenv("DATABASE_URL") # String de conexão do NeonDB
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-def build_url():
+# --- NOVA FUNÇÃO PARA CARREGAR CONFIG ---
+def carregar_configuracao(cursor):
+    sql = """
+    SELECT travel_date, origin_id, destiny_id, adults, children, teens, target_hours
+    FROM search_config 
+    WHERE id=1;
+    """
+    cursor.execute(sql)
+    row = cursor.fetchone()
+    
+    if not row:
+        raise Exception("Nenhuma configuração encontrada no banco (ID 1).")
+    
+    # Converte a string "23,0,1" em lista de inteiros [23, 0, 1]
+    # horas_lista = [int(x.strip()) for x in row[4].split(',') if x.strip()]
+    raw_hours = row[6]
+    
+    if raw_hours:
+        horas_lista = [int(h.strip()) for h in str(raw_hours).split(',') if h.strip().isdigit()]
+    else:
+        horas_lista = []
+    
+    config = {
+        "params": {
+            "data_ida": row[0],
+            "origem_id": row[1],
+            "destino_id": row[2],
+            "num_psgr": str(row[3]),
+            "num_chda": str(row[4]),
+            "num_chds": str(row[5]),
+            "deep": "true"
+        },
+        "horas_alvo": horas_lista
+    }
+    return config 
+
+# def build_url():
+def build_url(params):
     """Constrói a URL dinamicamente com os parâmetros."""
-    query_string = urllib.parse.urlencode(PARAMS)
+    # query_string = urllib.parse.urlencode(PARAMS)
+    query_string = urllib.parse.urlencode(params)
     return f"{BASE_URL}?{query_string}" 
     
-async def get_best_price():
-    url = build_url()
+async def get_best_price(params, horas_alvo):
+    url = build_url(params)
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, 
+        browser = await p.chromium.launch(
+            headless=True, 
                 args=[
                 '--disable-blink-features=AutomationControlled',
                 '--no-sandbox',
@@ -59,11 +98,11 @@ async def get_best_price():
         print(f"Acessando {url}...")
         
         try:
-            waitTime = random.randint(10000, 20000)
+            waitTime = random.randint(5000, 10000)
             
             await page.goto(url, timeout=90000, wait_until="domcontentloaded")
             
-            print(f"Aguardando {waitTime / 1000}s para garantir o carregamento...")
+            print(f"Aguardando {int(waitTime / 1000)}s para garantir o carregamento...")
             await page.wait_for_timeout(waitTime)
             
             print("Rolando a página até o fim para carregar todo o conteúdo...")
@@ -81,9 +120,9 @@ async def get_best_price():
         content = await page.content()
         await browser.close()
 
-        return process_html_content(content)
+        return process_html_content(content, horas_alvo)
 
-def process_html_content(html_content):
+def process_html_content(html_content, horas_alvo_int):
     soup = BeautifulSoup(html_content, 'html.parser')
     
     precos_encontrados = []
@@ -100,58 +139,76 @@ def process_html_content(html_content):
         
         horario_texto = time_element.get_text(strip=True)
         
-        if horario_texto in HORARIOS_ALVO:
-            print(f"-> Analisando Card das {horario_texto}...")
+        try:
+            hora_partida = int(horario_texto.split(':')[0])
+        
+            if hora_partida in horas_alvo_int:
+                print(f"-> Analisando Card das {horario_texto} (Hora {hora_partida}h)...")
             
-            # Busca todas as tags que tenham o atributo data-js="priceLabel"
-            labels_inteiro = card.find_all('span', attrs={'data-js': 'priceLabel'})
+                # Busca todas as tags que tenham o atributo data-js="priceLabel"
+                labels_inteiro = card.find_all('span', attrs={'data-js': 'priceLabel'})
             
-            if not labels_inteiro:
-                print(f"   Aviso: Nenhum preço encontrado dentro do card das {horario_texto} (pode estar esgotado).")
-                continue
+            # if not labels_inteiro:
+            #     print(f"   Aviso: Nenhum preço encontrado dentro do card das {horario_texto} (pode estar esgotado).")
+            #     continue
             
-            for label_int in labels_inteiro:
-                # O label decimal costuma ser irmão ou estar no mesmo pai
-                # Vamos buscar o pai desse preço inteiro para achar o decimal vizinho
-                container_preco = label_int.parent
+                for label_int in labels_inteiro:
+                    # O label decimal costuma ser irmão ou estar no mesmo pai
+                    # Vamos buscar o pai desse preço inteiro para achar o decimal vizinho
+                    container_preco = label_int.parent                
+                    label_dec = container_preco.find('span', attrs={'data-js': 'decimalLabel'})
                 
-                label_dec = container_preco.find('span', attrs={'data-js': 'decimalLabel'})
+                    if label_dec:
+                        # Texto puro: "177" e ",74"
+                        txt_int = label_int.get_text(strip=True).replace('.', '')
+                        txt_dec = label_dec.get_text(strip=True).replace(',', '')
                 
-                if label_dec:
-                    # Texto puro: "177" e ",74"
-                    txt_int = label_int.get_text(strip=True).replace('.', '')
-                    txt_dec = label_dec.get_text(strip=True).replace(',', '')
-                
-                    try:
-                        preco_float = float(f"{txt_int}.{txt_dec}")
-                        print(f"   Preço detectado: R$ {preco_float:.2f}")
-                        precos_encontrados.append(preco_float)
-                    except ValueError:
-                        continue
+                        try:
+                            preco_float = float(f"{txt_int}.{txt_dec}")
+                            print(f"   Preço detectado: R$ {preco_float:.2f}")
+                            precos_encontrados.append(preco_float)
+                        except ValueError:
+                            continue
+        except ValueError:
+            continue
                 
     if not precos_encontrados:
-        print(f"Nenhum preço disponível para os horários: {HORARIOS_ALVO}")
+        print(f"Nenhum preço disponível para os horários: {horas_alvo_int}")
         return None
         
     menor_preco = min(precos_encontrados)
     return menor_preco
 
 def get_last_price(cursor):
-    cursor.execute("SELECT price FROM price_history ORDER BY register_date DESC LIMIT 1;")
+    # cursor.execute("SELECT price FROM price_history ORDER BY register_date DESC LIMIT 1;")
+    cursor.execute("SELECT price FROM price_history WHERE id=1;")
     result = cursor.fetchone()
-    return float(result[0]) if result else None
+    return float(result[0]) if result and result[0] is not None else None
 
 def save_price(cursor, conn, price):
-    cursor.execute("INSERT INTO price_history (price) VALUES (%s)", (price,))
+    # cursor.execute("INSERT INTO price_history (price) VALUES (%s)", (price,))
+    sql = """
+    UPDATE price_history
+    SET price = %s,
+    register_date = CURRENT_TIMESTAMP
+    WHERE id = 1;
+    """
+    cursor.execute(sql, (price,))
     conn.commit()
 
-async def send_telegram_alert(price, old_price):
+async def send_telegram_alert(price, old_price, link):
     bot = Bot(token=TELEGRAM_TOKEN)
-    link = build_url()
+    economia = ""
+    if old_price:
+        diff = old_price - price
+        economia = f"\n📉 Economia de: R$ {diff:.2f}"
+        
+    # link = build_url()
     msg = (
         f"🚨 **BAIXOU O PREÇO!** 🚨\n\n"
         f"De: R$ {old_price:.2f}\n"
         f"Para: R$ {price:.2f}\n\n"
+        f"{economia}\n\n"
         f"Corre para comprar: {link}"
     )
     await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode='Markdown')
@@ -159,21 +216,31 @@ async def send_telegram_alert(price, old_price):
 async def main():
     if not DATABASE_URL:
         raise Exception("DATABASE_URL não configurada.")
+        return
 
     # Conecta ao Banco
     print("Conectando ao banco de dados...")
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
+        
+        # 1. Carrega Configuração Dinâmica
+        print("Lendo configurações do banco...")
+        config = carregar_configuracao(cursor)
+        params_busca = config['params']
+        horas_alvo = config['horas_alvo']
 
         print("Analisando preços...")
     # 1. Pega preço atual no site
-        current_price = await get_best_price()
+        # current_price = await get_best_price()
+        current_price = await get_best_price(params_busca, horas_alvo)
     
         if current_price:
-            print(f"Preço atual detectado: R$ {current_price}")
+            print(f"Preço atual detectado: R$ {current_price:.2f}")
             # 2. Pega último preço no banco
             last_price = get_last_price(cursor)
+            
+            link = build_url(params_busca)
         
             # 3. Lógica de Comparação
             if last_price is None:
@@ -182,7 +249,7 @@ async def main():
         
             elif current_price < last_price:
                 print("Preço caiu! Enviando alerta...")
-                await send_telegram_alert(current_price, last_price)
+                await send_telegram_alert(current_price, last_price, link)
                 save_price(cursor, conn, current_price)
             
             elif current_price > last_price:
@@ -194,7 +261,7 @@ async def main():
                 # save_price(cursor, conn, current_price)
             
         else:
-            print(f"Nenhum preço encontrado nos horários desejados ({HORARIOS_ALVO}).")
+            print(f"Nenhum preço encontrado nos horários desejados ({horas_alvo}).")
 
         conn.close()
     except Exception as e:
