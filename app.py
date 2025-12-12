@@ -63,7 +63,7 @@ col_status1, col_status2 = st.columns(2)
 try:
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute("SELECT price, register_date FROM search_config WHERE id=1")
+    cur.execute("SELECT price, register_date FROM price_history WHERE id=1")
     status = cur.fetchone()
     # conn.close()
     
