@@ -4,7 +4,25 @@ import os
 from datetime import datetime
 
 # Configuração da página
-st.set_page_config(page_title="Monitor de Passagens", page_icon="🚌", layout="centered")
+st.set_page_config(
+    page_title="Monitor de Passagens", 
+    page_icon="🚌", 
+    layout="centered"
+    )
+
+CIDADES_MAP = {
+    "Araruama": "14265",
+    "Búzios": "14103",
+    "Cabo Frio": "14270",
+    "Campos dos Goytacazes (Shop.Estrada)": "14245",
+    "Macaé": "14235",
+    "Niterói": "14224",
+    "Rio das Ostras": "14274",
+    "Rio de Janeiro (Novo Rio)": "14199",
+    "São Paulo (Tietê)": "18697", # Exemplo fictício, verifique o ID real se usar
+}
+
+ID_TO_NOME = {v: i for i, c in CIDADES_MAP.items()}
 
 # Conexão com Banco
 def get_db_connection():
@@ -14,52 +32,11 @@ def get_db_connection():
     
     return psycopg2.connect(db_url)
 
-st.title("🚌 Controle do Monitor de Passagens")
+st.title("🚌 Monitor de Passagens")
 st.markdown("---")
 # Colunas para mostrar o Status Atual (Lendo tabela monitor_status)
 col_status1, col_status2 = st.columns(2)
 
-# # Formulário
-# with st.form("config_form"):
-#     st.write("### Parâmetros da Viagem")
-    
-#     col1, col2 = st.columns(2)
-#     with col1:
-#         data_input = st.text_input("Data (DDMMAAAA)", value="10022026")
-#         origem = st.text_input("ID Origem", value="14245")
-#     with col2:
-#         adultos = st.number_input("Adultos", min_value=1, value=2)
-#         criancas = st.number_input("Crianças (até 5 anos)", min_value=0, value=0)
-#         adolescentes = 0
-#         destino = st.text_input("ID Destino", value="14199")
-    
-#     st.write("### Filtro de Horário")
-#     horas_txt = st.text_input("Horas de Partida (separar por vírgula)", value="22,23,0,1")
-#     st.caption("Exemplo: Digite '23,0' para monitorar qualquer ônibus saindo às 23h ou 00h.")
-    
-#     submitted = st.form_submit_button("💾 Salvar Configuração")
-    
-#     if submitted:
-#         try:
-#             conn = get_db_connection()
-#             cur = conn.cursor()
-            
-#             # Atualiza sempre o registro ID=1
-#             query = """
-#                 UPDATE search_config 
-#                 SET travel_date=%s, origin_id=%s, destiny_id=%s, adults=%s, children=%s, teens=%s, target_hours=%s
-#                 WHERE id=1;
-#             """
-#             cur.execute(query, (data_input, origem, destino, adultos, criancas, adolescentes, horas_txt))
-#             conn.commit()
-#             conn.close()
-#             st.success("Configuração atualizada com sucesso! O robô usará esses dados na próxima rodada.")
-#         except Exception as e:
-#             st.error(f"Erro ao salvar: {e}")
-
-# # Mostrar dados atuais
-# st.divider()
-# st.write("🔍 **Configuração Atual no Banco:**")
 try:
     conn = get_db_connection()
     cur = conn.cursor()
@@ -69,19 +46,25 @@ try:
     
     if status:
         price = status[0]
-        register_date = status[1].strftime("%d/%m/%Y %H:%M") if status[1] else "Nunca"
+        timestamp_utc = status[1]
+        # register_date = status[1].strftime("%d/%m/%Y %H:%M") if status[1] else "Nunca"
+        if timestamp_utc:
+            timestamp_br = timestamp_utc - timedelta(hours=3)  # Ajuste para horário de Brasília
+            last_update_str = timestamp_br.strftime("%d/%m/%Y %H:%M")
+        else:
+            register_date = "Ainda não monitorado"
         
         with col_status1:
             st.metric("💰 Último Preço Encontrado", f"R$ {price:.2f}")
         with col_status2:
-            st.metric("🕒 Última Atualização", register_date)
+            st.metric("🕒 Última Atualização", last_update_str)
     else:
         st.warning("Ainda sem dados de monitoramento...")
     
     conn.close()
     
 except Exception as e:
-    st.error(f"Não ao conectar... {e}")
+    st.error(f"Erro ao conectar... {e}")
 
 st.markdown("---")
 
@@ -98,34 +81,56 @@ try:
     conn.close()
 
     if config:
+        db_date_str = config[0]
+        db_origin_id = config[1]
+        db_destiny_id = config[2]
+        
+        try:
+            default_date = datetime.strptime(db_date_str, "%d%m%Y").date()
+        except:
+            default_date = datetime.today().date()
+            
+        #Selects das cidades...
+        origin_default_idx = list(CIDADES_MAP.values()).index(db_origin_id) if db_origin_id in CIDADES_MAP.values() else 0
+        destiny_default_idx = list(CIDADES_MAP.values()).index(db_destiny_id) if db_destiny_id in CIDADES_MAP.values() else 1
+        
         # Cria o formulário
         with st.form("config_form"):
             col1, col2 = st.columns(2)
             
             with col1:
+                new_date_obj = st.date_input("Data da Viagem", value=default_date, format="DD/MM/YYYY")
+                
+                origin = st.selectbox("Origem", options=list(CIDADES_MAP.keys()), index=origin_default_idx)
                 # O site pede DDMMAAAA, mantemos texto para evitar erros de conversão
-                travel_date = st.text_input("Data da Viagem (DDMMAAAA)", value=config[0])
-                origin_id = st.text_input("ID Origem", value=config[1])
+                # travel_date = st.text_input("Data da Viagem (DDMMAAAA)", value=config[0])
+                # origin_id = st.text_input("ID Origem", value=config[1])
                 active_monitor = st.checkbox("Monitor Ativo?", value=config[7])
                 
             with col2:
                 # Horários alvo
                 target_hours = st.text_input("Horas Alvo (separar por vírgula)", value=config[6], help="Ex: 22,23,0 para buscar ônibus saindo às 22h, 23h ou Meia-noite.")
-                destiny_id = st.text_input("ID Destino", value=config[2])
+                # destiny_id = st.text_input("ID Destino", value=config[2])
+                destiny = st.selectbox("Destino", options=list(CIDADES_MAP.keys()), index=destiny_default_idx)
 
             st.write("**Passageiros**")
             p_col1, p_col2, p_col3 = st.columns(3)
+            
             with p_col1:
                 adults = st.number_input("Adultos", min_value=1, value=config[3])
             with p_col2:
                 children = st.number_input("Crianças", min_value=0, value=config[4])
             with p_col3:
-                teens = st.number_input("Jovens/Outros", min_value=0, value=config[5])
+                teens = st.number_input("Jovens", min_value=0, value=config[5])
 
             # Botão de Salvar
             submitted = st.form_submit_button("💾 Salvar Novas Regras")
 
             if submitted:
+                date_to_save = new_date_obj.strftime("%d%m%Y")
+                id_origin = CIDADES_MAP[origin]
+                id_destiny = CIDADES_MAP[destiny]
+                
                 try:
                     conn = get_db_connection()
                     cur = conn.cursor()
@@ -137,10 +142,10 @@ try:
                             target_hours=%s, active=%s
                         WHERE id=1;
                     """
-                    cur.execute(sql, (travel_date, origin_id, destiny_id, adults, children, teens, target_hours, active_monitor))
+                    cur.execute(sql, (date_to_save, id_origin, id_destiny, adults, children, teens, target_hours, active_monitor))
                     conn.commit()
                     conn.close()
-                    st.success("✅ Configurações salvas! O robô usará esses dados na próxima hora.")
+                    st.success("✅ Configurações salvas! Viagem de {origin} para {destiny} em {new_date_obj.strftime('%d/%m/%Y')}.")
                     
                     # Recarrega a página para atualizar os dados visuais
                     st.rerun()
@@ -148,7 +153,7 @@ try:
                 except Exception as e:
                     st.error(f"Erro ao salvar: {e}")
     else:
-        st.error("Não foi possível carregar as configurações iniciais do banco (ID 1 inexistente).")
+        st.error("Não foi possível carregar as configurações iniciais da base de dados.")
 
 except Exception as e:
     st.error(f"Erro no formulário: {e}")
