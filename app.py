@@ -22,7 +22,7 @@ CIDADES_MAP = {
     "São Paulo (Tietê)": "18697", # Exemplo fictício, verifique o ID real se usar
 }
 
-ID_TO_NOME = {v: i for i, c in CIDADES_MAP.items()}
+ID_TO_NOME = {v: k for k, v in CIDADES_MAP.items()}
 
 # Conexão com Banco
 def get_db_connection():
