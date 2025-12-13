@@ -1,7 +1,7 @@
 import streamlit as st
 import psycopg2
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Configuração da página
 st.set_page_config(
