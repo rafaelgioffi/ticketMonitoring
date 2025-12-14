@@ -115,7 +115,8 @@ try:
                 destiny = st.selectbox("Destino", options=list(CIDADES_MAP.keys()), index=destiny_default_idx)
 
             st.write("**Passageiros**")
-            p_col1, p_col2, p_col3 = st.columns(3)
+            # p_col1, p_col2, p_col3 = st.columns(3)
+            p_col1, p_col2 = st.columns(2)
             
             with p_col1:
                 adults = st.number_input("Adultos", min_value=1, value=config[3])
