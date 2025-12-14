@@ -76,7 +76,8 @@ try:
     cur = conn.cursor()
     
     # Busca configuração atual para preencher o formulário
-    cur.execute("SELECT travel_date, origin_id, destiny_id, adults, children, teens, target_hours, active FROM search_config WHERE id=1")
+    # cur.execute("SELECT travel_date, origin_id, destiny_id, adults, children, teens, target_hours, active FROM search_config WHERE id=1")
+    cur.execute("SELECT travel_date, origin_id, destiny_id, adults, children, target_hours, active FROM search_config WHERE id=1")
     config = cur.fetchone()
     conn.close()
 
@@ -119,9 +120,9 @@ try:
             with p_col1:
                 adults = st.number_input("Adultos", min_value=1, value=config[3])
             with p_col2:
-                children = st.number_input("Crianças", min_value=0, value=config[4])
-            with p_col3:
-                teens = st.number_input("Jovens", min_value=0, value=config[5])
+                children = st.number_input("Crianças (Até 5 anos e 11 meses)", min_value=0, value=config[4])
+            # with p_col3:
+                # teens = st.number_input("Jovens", min_value=0, value=config[5])
 
             # Botão de Salvar
             submitted = st.form_submit_button("💾 Salvar Novas Regras")
@@ -135,14 +136,24 @@ try:
                     conn = get_db_connection()
                     cur = conn.cursor()
                     
+                    # sql = """
+                    #     UPDATE search_config 
+                    #     SET travel_date=%s, origin_id=%s, destiny_id=%s, 
+                    #         adults=%s, children=%s, teens=%s,                         
+                    #         target_hours=%s, active=%s
+                    #     WHERE id=1;
+                    # """
+                    
                     sql = """
                         UPDATE search_config 
-                        SET travel_date=%s, origin_id=%s, destiny_id=%s, 
-                            adults=%s, children=%s, teens=%s, 
+                        SET travel_date=%s, origin_id=%s, destiny_id=%s,
+                            adults=%s, children=%s,
                             target_hours=%s, active=%s
                         WHERE id=1;
                     """
-                    cur.execute(sql, (date_to_save, id_origin, id_destiny, adults, children, teens, target_hours, active_monitor))
+                    
+                    # cur.execute(sql, (date_to_save, id_origin, id_destiny, adults, children, teens, target_hours, active_monitor))
+                    cur.execute(sql, (date_to_save, id_origin, id_destiny, adults, children, target_hours, active_monitor))
                     conn.commit()
                     conn.close()
                     st.success("✅ Configurações salvas! Viagem de {origin} para {destiny} em {new_date_obj.strftime('%d/%m/%Y')}.")
