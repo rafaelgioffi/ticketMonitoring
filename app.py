@@ -106,11 +106,13 @@ try:
                 # O site pede DDMMAAAA, mantemos texto para evitar erros de conversão
                 # travel_date = st.text_input("Data da Viagem (DDMMAAAA)", value=config[0])
                 # origin_id = st.text_input("ID Origem", value=config[1])
-                active_monitor = st.checkbox("Monitor Ativo?", value=config[7])
+                # active_monitor = st.checkbox("Monitor Ativo?", value=config[7])
+                active_monitor = st.checkbox("Monitor Ativo?", value=config[6])
                 
             with col2:
                 # Horários alvo
-                target_hours = st.text_input("Horas Alvo (separar por vírgula)", value=config[6], help="Ex: 22,23,0 para buscar ônibus saindo às 22h, 23h ou Meia-noite.")
+                # target_hours = st.text_input("Horas Alvo (separar por vírgula)", value=config[6], help="Ex: 22,23,0 para buscar ônibus saindo às 22h, 23h ou Meia-noite.")
+                target_hours = st.text_input("Horas Alvo (separar por vírgula)", value=config[5], help="Ex: 22,23,0 para buscar ônibus saindo às 22h, 23h ou Meia-noite.")
                 # destiny_id = st.text_input("ID Destino", value=config[2])
                 destiny = st.selectbox("Destino", options=list(CIDADES_MAP.keys()), index=destiny_default_idx)
 
