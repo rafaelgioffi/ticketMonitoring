@@ -33,7 +33,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 # --- NOVA FUNÇÃO PARA CARREGAR CONFIG ---
 def carregar_configuracao(cursor):
     sql = """
-    SELECT travel_date, origin_id, destiny_id, adults, children, teens, target_hours
+    SELECT travel_date, origin_id, destiny_id, adults, children, target_hours
     FROM search_config 
     WHERE id=1;
     """
@@ -45,7 +45,8 @@ def carregar_configuracao(cursor):
     
     # Converte a string "23,0,1" em lista de inteiros [23, 0, 1]
     # horas_lista = [int(x.strip()) for x in row[4].split(',') if x.strip()]
-    raw_hours = row[6]
+    # raw_hours = row[6]
+    raw_hours = row[5]
     
     if raw_hours:
         horas_lista = [int(h.strip()) for h in str(raw_hours).split(',') if h.strip().isdigit()]
@@ -58,8 +59,10 @@ def carregar_configuracao(cursor):
             "origem_id": row[1],
             "destino_id": row[2],
             "num_psgr": str(row[3]),
-            "num_chda": str(row[4]),
-            "num_chds": str(row[5]),
+            # "num_chda": str(row[4]),
+            "num_chda": 0,
+            # "num_chds": str(row[5]),
+            "num_chds": str(row[4]),
             "deep": "true"
         },
         "horas_alvo": horas_lista
@@ -122,6 +125,34 @@ async def get_best_price(params, horas_alvo):
 
         return process_html_content(content, horas_alvo)
 
+def extract_price_from_tag(container, label_attr, decimal_attr):
+    """
+    Função auxiliar para extrair preço dado os nomes dos atributos data-js.
+    """
+    labels = container.find_all('span', attrs={'data-js': label_attr})
+    prices = []
+    
+    for label in labels:
+        # Se o elemento estiver oculto (classe d-none), ignoramos
+        # ou tentamos ler mesmo assim, pois as vezes o site apenas esconde visualmente
+        # mas no caso da 1001, o preço Pix costuma estar visível quando ativo.
+        
+        parent = label.parent
+        decimal = parent.find('span', attrs={'data-js': decimal_attr})
+        
+        if decimal:
+            txt_int = label.get_text(strip=True).replace('.', '')
+            txt_dec = decimal.get_text(strip=True).replace(',', '')
+            
+            # Validação básica para evitar converter vazio
+            if txt_int and txt_dec:
+                try:
+                    val = float(f"{txt_int}.{txt_dec}")
+                    prices.append(val)
+                except ValueError:
+                    continue
+    return prices
+
 def process_html_content(html_content, horas_alvo_int):
     soup = BeautifulSoup(html_content, 'html.parser')
     
@@ -144,31 +175,44 @@ def process_html_content(html_content, horas_alvo_int):
         
             if hora_partida in horas_alvo_int:
                 print(f"-> Analisando Card das {horario_texto} (Hora {hora_partida}h)...")
+                
+                prices_in_card = []
+                prices_in_card.extend(extract_price_from_tag(card, 'priceLabel', 'decimalLabel'))                
+                
+                prices_in_card.extend(extract_price_from_tag(card, 'priceLabelPix', 'decimalLabelPix'))
+                
+                if prices_in_card:
+                    min_price = min(prices_in_card)
+                    print(f"   Preços neste horário: {prices_in_card}")
+                    print(f"   Melhor oferta encontrada: R$ {min_price:.2f}")
+                    precos_encontrados.append(min_price)
+                else:
+                    print("   Sem preços disponíveis (Esgotado ou Erro de Leitura).")
             
                 # Busca todas as tags que tenham o atributo data-js="priceLabel"
-                labels_inteiro = card.find_all('span', attrs={'data-js': 'priceLabel'})
+                # labels_inteiro = card.find_all('span', attrs={'data-js': 'priceLabel'})
             
             # if not labels_inteiro:
             #     print(f"   Aviso: Nenhum preço encontrado dentro do card das {horario_texto} (pode estar esgotado).")
             #     continue
             
-                for label_int in labels_inteiro:
+                # for label_int in labels_inteiro:
                     # O label decimal costuma ser irmão ou estar no mesmo pai
                     # Vamos buscar o pai desse preço inteiro para achar o decimal vizinho
-                    container_preco = label_int.parent                
-                    label_dec = container_preco.find('span', attrs={'data-js': 'decimalLabel'})
+                    # container_preco = label_int.parent                
+                    # label_dec = container_preco.find('span', attrs={'data-js': 'decimalLabel'})
                 
-                    if label_dec:
-                        # Texto puro: "177" e ",74"
-                        txt_int = label_int.get_text(strip=True).replace('.', '')
-                        txt_dec = label_dec.get_text(strip=True).replace(',', '')
+                    # if label_dec:
+                    #     # Texto puro: "177" e ",74"
+                    #     txt_int = label_int.get_text(strip=True).replace('.', '')
+                    #     txt_dec = label_dec.get_text(strip=True).replace(',', '')
                 
-                        try:
-                            preco_float = float(f"{txt_int}.{txt_dec}")
-                            print(f"   Preço detectado: R$ {preco_float:.2f}")
-                            precos_encontrados.append(preco_float)
-                        except ValueError:
-                            continue
+                    #     try:
+                    #         preco_float = float(f"{txt_int}.{txt_dec}")
+                    #         print(f"   Preço detectado: R$ {preco_float:.2f}")
+                    #         precos_encontrados.append(preco_float)
+                    #     except ValueError:
+                    #         continue
         except ValueError:
             continue
                 
@@ -176,8 +220,9 @@ def process_html_content(html_content, horas_alvo_int):
         print(f"Nenhum preço disponível para os horários: {horas_alvo_int}")
         return None
         
-    menor_preco = min(precos_encontrados)
-    return menor_preco
+    # menor_preco = min(precos_encontrados)
+    # return menor_preco
+    return min(precos_encontrados)
 
 def get_last_price(cursor):
     # cursor.execute("SELECT price FROM price_history ORDER BY register_date DESC LIMIT 1;")
