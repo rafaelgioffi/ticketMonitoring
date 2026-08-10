@@ -14,10 +14,10 @@ load_dotenv()
 BASE_URL = "https://www.autoviacao1001.com.br/disponibilidade"
 
 # PARAMS = {
-#     "data_ida": "10022026",  # Formato DDMMAAAA
+#     "data_ida": "11102026",  # Formato DDMMAAAA
 #     "origem_id": "14245",
 #     "destino_id": "14199",
-#     "num_psgr": "3",         # Adultos
+#     "num_psgr": "1",         # Adultos
 #     "num_chda": "0",         # Crianças de colo? (verificar site)
 #     "num_chds": "0",         # Crianças
 #     # "deep": "true"
